@@ -3,18 +3,15 @@ import json
 import webbrowser
 import config
 
-user_id_arnaud = config.user_id_arnaud
-CLIENT_ID = config.CLIENT_ID
+user_id_arnaud = '11122778696'
 CLIENT_SECRET = config.CLIENT_SECRET
 redirect_uri = config.REDIRECT_URI
 REDIRECT_URI='http://localhost:8889/callback'
-BASE_URL = config.BASE_URL
+BASE_URL = 'https://api.spotify.com/v1/'
 
 # GET code for scope 
 def get_code_with_scope(CLIENT_ID, *additional_scopes):
     # Impression des valeurs pour débogage
-    print(f"CLIENT_ID: {CLIENT_ID}")
-    print(f"REDIRECT_URI: {REDIRECT_URI}")
     # Liste des scopes de base
     base_scopes = [
         "playlist-modify-private",
@@ -56,24 +53,24 @@ def create_header(code):
     return headers
 
 # Recuperer la liste des Playlists d'un user
-def get_playlist_for_user(headers, user = user_id_arnaud, limits = '50') :
+def get_playlist_for_user(headers = headers, user = user_id_arnaud, limits = '50') :
     url = f"{BASE_URL}users/{user}/playlists?limit={limits}"
     response = requests.get(url, headers=headers)
     playlists = response.json()
-    print(playlists)
+    #print(playlists)
 ## Recupère la list des playlists et affiche le playlist_id
     for playlist in playlists['items']:
        print(playlist['name'], ' --- ', playlist['href'])
 
 # fonction qui retourne une liste d'uri des tracks
-def get_track_for_playlist(playlist) :
+def get_track_for_playlist(playlist, headers = headers) :
     list_uris = []
     for song in playlist['tracks']['items']:
         list_uris.append(song['track']['uri'])
     return list_uris
 
 #Créer une playliste
-def create_playlist(playlist_name, user = user_id_arnaud) :
+def create_playlist(playlist_name, headers = headers, user = user_id_arnaud) :
     new_playlist = json.dumps({
       "name": playlist_name,
       "description": "create by API",
