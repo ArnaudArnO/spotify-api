@@ -83,13 +83,24 @@ def get_track_for_playlist(headers, PLAYLIST) :
         uris_dict["uris"].append(song['track']['uri'])
     return uris_dict
 
-#Créer une playliste
+#Créer une playlist
 def create_playlist(headers, playlist_name, user = user_id_arnaud) :
+    # Demander à l'utilisateur si la playlist doit être publique
+    public_input = input("La playlist doit-elle être publique ? ((oui/y/yes)/non) : ").strip().lower()
+    is_public = public_input in ['oui', 'y', 'yes']
+    
+    # Demander la description de la playlist
+    description = input("Entrez la description de la playlist (laisser vide pour 'create by API') : ").strip()
+    if not description:
+        description = "create by API"
+    
+    # Construire les données de la nouvelle playlist
     new_playlist = json.dumps({
-      "name": playlist_name,
-      "description": "create by API",
-      "public": False
-      })
+        "name": playlist_name,
+        "description": description,
+        "public": is_public
+    })
+    
     #création d'une playlist
     response = requests.post(BASE_URL  + 'users/'+ user +'/playlists',  data=new_playlist, headers=headers)
     return response.json()
@@ -98,8 +109,19 @@ def merge_playlist(headers, output_playlist_id, input_playlist_id, user = user_i
     uris_dict_to_merge = get_track_for_playlist(headers, input_playlist_id)
     response = requests.post(BASE_URL + 'playlists/' + output_playlist_id +'/tracks', json=uris_dict_to_merge, headers=headers)
     print(response.status_code)
-    ## Rajouter le fait de supprimer la playlist input si on veux au passage. 
     return response.json()
+
+## Fonction pour savoir si toute les musiques d'une playlist sont dans une autre
+def can_i_delete_playlist(headers, playlist_master, playlist_2):
+    # Récupérer les URIs des chansons de la playlist master
+    uris_master = set(get_track_for_playlist(headers, playlist_master)['uris'])
+    # Récupérer les URIs des chansons de la playlist 2
+    uris_playlist_2 = get_track_for_playlist(headers, playlist_2)['uris']
+    # Vérifier si tous les URIs de playlist_2 sont dans la playlist_master
+    if all(uri in uris_master for uri in uris_playlist_2):
+        print("Toutes les chansons de la playlist 2 sont déjà dans la playlist master. Vous pouvez supprimer la playlist sans perdre de musique.")
+    else:
+        print("Certaines chansons de la playlist 2 ne sont pas dans la playlist master. Vous risquez de perdre des morceaux si vous supprimez la playlist.")
 
 # Recuperer la liste des tracks en plusieurs exemplaire
 def find_duplicate_track(headers, playlist_id):
@@ -130,20 +152,7 @@ def delete_duplicate_track(headers, playlist_id):
     response_add = requests.post(BASE_URL + 'playlists/' + playlist_id + '/tracks', json=add_tracks, headers=headers)
     print(f'Status Code Add : {response_add.status_code}')
 
-def delete_playlist(headers, playlist_id):
-    # Demande de confirmation
-    playlist_name= requests.get(BASE_URL + 'playlists/' + playlist_id, headers=headers).json().get('name')
-    confirmation = input(f"Êtes-vous sûr de vouloir supprimer la playlist '{playlist_name}' ? (oui/non) : ").strip().lower()
-    # Vérifier si la réponse est dans les réponses acceptées
-    if confirmation in ['oui', 'y', 'yes']:
-        # Effectuer la suppression si la réponse est "oui", "y" ou "yes"
-        response = requests.delete(BASE_URL + 'playlists/' + playlist_id, headers=headers)
-        print(f'Status Code Delete : {response.status_code}')
-        return response.json()
-    else:
-        # Annuler l'action si la réponse n'est pas dans les réponses acceptées
-        print("Suppression annulée.")
-        return None
+
 
 
 def json_in_file(PATH, JSON):
