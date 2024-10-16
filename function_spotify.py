@@ -98,6 +98,7 @@ def merge_playlist(headers, output_playlist_id, input_playlist_id, user = user_i
     uris_dict_to_merge = get_track_for_playlist(headers, input_playlist_id)
     response = requests.post(BASE_URL + 'playlists/' + output_playlist_id +'/tracks', json=uris_dict_to_merge, headers=headers)
     print(response.status_code)
+    ## Rajouter le fait de supprimer la playlist input si on veux au passage. 
     return response.json()
 
 # Recuperer la liste des tracks en plusieurs exemplaire
@@ -129,6 +130,20 @@ def delete_duplicate_track(headers, playlist_id):
     response_add = requests.post(BASE_URL + 'playlists/' + playlist_id + '/tracks', json=add_tracks, headers=headers)
     print(f'Status Code Add : {response_add.status_code}')
 
+def delete_playlist(headers, playlist_id):
+    # Demande de confirmation
+    playlist_name= requests.get(BASE_URL + 'playlists/' + playlist_id, headers=headers).json().get('name')
+    confirmation = input(f"Êtes-vous sûr de vouloir supprimer la playlist '{playlist_name}' ? (oui/non) : ").strip().lower()
+    # Vérifier si la réponse est dans les réponses acceptées
+    if confirmation in ['oui', 'y', 'yes']:
+        # Effectuer la suppression si la réponse est "oui", "y" ou "yes"
+        response = requests.delete(BASE_URL + 'playlists/' + playlist_id, headers=headers)
+        print(f'Status Code Delete : {response.status_code}')
+        return response.json()
+    else:
+        # Annuler l'action si la réponse n'est pas dans les réponses acceptées
+        print("Suppression annulée.")
+        return None
 
 
 def json_in_file(PATH, JSON):
