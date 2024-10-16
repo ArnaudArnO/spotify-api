@@ -72,7 +72,6 @@ def print_track_for_playlist(headers, PLAYLIST) :
     song_playlist = response.json()
     for song in song_playlist['tracks']['items']:
         print(song['track']['name'], ' --- ', song['track']['artists'][0]['name'], '---', song['track']['uri'])
-        uris_dict["uris"].append(song['track']['uri'])
 
 # fonction qui retourne une liste d'uri des tracks
 def get_track_for_playlist(headers, PLAYLIST) :
@@ -109,30 +108,27 @@ def find_duplicate_track(headers, playlist_id):
     duplicates_list = [uri for uri, count in uri_counts.items() if count > 1]
     # Construire la liste de dictionnaires pour les pistes
     tracks_list = [{"uri": uri} for uri in duplicates_list]
-    print(tracks_list)
-    return tracks_list
+    return duplicates_list
 
 def delete_duplicate_track(headers, playlist_id):
     uris_duplicate_songs = find_duplicate_track(headers, playlist_id)
     # Recupere le snapshot_id
     snapshot_id= requests.get(BASE_URL + 'playlists/' + playlist_id, headers=headers).json()['snapshot_id']
-    # Construire le dictionnaire final 
-    data = {
-        "tracks": uris_duplicate_songs,
+    tracks_list = [{"uri": uri} for uri in uris_duplicate_songs]
+    # Construire le dictionnaire final a supprimer 
+    delete_tracks = {
+        "tracks": tracks_list,
         "snapshot_id": snapshot_id
     }
-    print(data)
-    #response = requests.delete(BASE_URL + 'playlists/' + playlist_id, data=data, headers=headers)
-    #print(response.status_code)
-    #return response.json()
+    # Suppression des Chansons
+    response_delete = requests.delete(BASE_URL + 'playlists/' + playlist_id + '/tracks', json=delete_tracks, headers=headers)
+    print(f'Status Code Delete : {response_delete.status_code}')
+    # Construction de la liste des chanson a remettre pour eviter que elle soit totalement supprimé
+    add_tracks = { 'uris': uris_duplicate_songs}
+    #Rajout des tracks
+    response_add = requests.post(BASE_URL + 'playlists/' + playlist_id + '/tracks', json=add_tracks, headers=headers)
+    print(f'Status Code Add : {response_add.status_code}')
 
-#def intersection_listes(*listes):
-#    # Convertir les listes en ensembles pour utiliser l'intersection
-#    ensembles = map(set, listes)
-#    # Calculer l'intersection de tous les ensembles
-#    resultat = set.intersection(*ensembles)
-#    # Convertir le résultat en liste
-#    return list(resultat)
 
 
 def json_in_file(PATH, JSON):
