@@ -55,32 +55,92 @@ def create_header(code, CLIENT_ID = client_id, CLIENT_SECRET = client_secret):
     return headers
 
 # Recuperer la liste des Playlists d'un user
-def get_playlist_for_user(headers, user = user_id_arnaud, limits = '50') :
-    url = f"{BASE_URL}users/{user}/playlists?limit={limits}"
-    response = requests.get(url, headers=headers)
-    playlists = response.json()
-    #print(playlists)
-## Recupère la list des playlists et affiche le playlist_id
-    for playlist in playlists['items']:
-       print(playlist['name'], ' --- ', playlist['href'])
+def get_playlist_for_user(headers, user=user_id_arnaud, limit=50):
+    url = f"{BASE_URL}users/{user}/playlists"
+    params = {"limit": limit, "offset": 0}
+    all_playlists = []
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        playlists = response.json()
+        # Vérifier que la réponse contient des playlists
+        if 'items' not in playlists:
+            break
+        # Ajouter les playlists à la liste complète
+        all_playlists.extend(playlists['items'])
+        
+        # Vérifier s'il reste des playlists à récupérer
+        if playlists['next'] is not None:
+            params['offset'] += limit
+        else:
+            break
+
+    # Préparer les données à enregistrer avec seulement le nom et l'URI
+    playlists_data = [{"name": playlist['name'], "uri": playlist['uri']} for playlist in all_playlists]
+    # Nom du fichier basé sur l'ID de l'utilisateur
+    output_file = f"/tmp/playlist_for_{user}.json"
+    # Enregistrer les données dans un fichier
+    json_in_file(output_file, playlists_data)
+    # Afficher les playlists
+    for playlist in playlists_data:
+        print(playlist['name'], ' --- ', playlist['uri'])
+    print(f"Les détails des playlists ont été enregistrés dans {output_file}.")
+    return all_playlists
+
 
 
 # fonction qui print la liste des tracks
-def print_track_for_playlist(headers, PLAYLIST) :
-    url = f"{BASE_URL}playlists/{PLAYLIST}"
-    response = requests.get(url, headers=headers)
-    song_playlist = response.json()
-    for song in song_playlist['tracks']['items']:
-        print(song['track']['name'], ' --- ', song['track']['artists'][0]['name'], '---', song['track']['uri'])
+def print_track_for_playlist(headers, PLAYLIST, output_file=None):
+    url = f"{BASE_URL}playlists/{PLAYLIST}/tracks"
+    params = {"limit": 100, "offset": 0}
+    all_tracks = []
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        song_playlist = response.json()
+        # Vérifier que la réponse contient des chansons
+        if 'items' not in song_playlist:
+            break
+        # Accumuler les détails des morceaux
+        for song in song_playlist['items']:
+            if song['track'] and song['track']['name'] and song['track']['artists']:
+                track_name = song['track']['name']
+                track_uri = song['track']['uri']
+                # Ajouter les détails du morceau à la liste
+                all_tracks.append({"name": track_name, "uri": track_uri})
+        # Vérifier s'il reste des chansons à récupérer
+        if song_playlist['next'] is not None:
+            params['offset'] += 100
+        else:
+            break
+    # Nom du fichier basé sur l'ID de la playlist
+    output_file = f"/tmp/tracks_for_{PLAYLIST}.json"
+    # Enregistrer les données dans un fichier
+    json_in_file(output_file, all_tracks)
+    # Afficher les morceaux
+    for track in all_tracks:
+        print(f"{track['name']} --- {track['uri']}")
+    print(f"Les détails des morceaux ont été enregistrés dans {output_file}.")
 
-# fonction qui retourne une liste d'uri des tracks
-def get_track_for_playlist(headers, PLAYLIST) :
+
+## Recuperer toute les musiques d'une playlist
+def get_track_for_playlist(headers, PLAYLIST):
     uris_dict = {"uris": []}
-    url = f"{BASE_URL}playlists/{PLAYLIST}"
-    response = requests.get(url, headers=headers)
-    song_playlist = response.json()
-    for song in song_playlist['tracks']['items']:
-        uris_dict["uris"].append(song['track']['uri'])
+    url = f"{BASE_URL}playlists/{PLAYLIST}/tracks"
+    params = {"limit": 100, "offset": 0}
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        song_playlist = response.json()
+        # Vérifier que la réponse contient des chansons
+        if 'items' not in song_playlist:
+            break
+        # Ajouter les chansons à la liste des URIs
+        for song in song_playlist['items']:
+            if song['track'] and song['track']['uri']:
+                uris_dict["uris"].append(song['track']['uri'])
+        # Vérifier s'il reste des chansons à récupérer
+        if song_playlist['next'] is not None:
+            params['offset'] += 100
+        else:
+            break 
     return uris_dict
 
 #Créer une playlist
@@ -114,23 +174,67 @@ def merge_playlist(headers, output_playlist_id, input_playlist_id, user = user_i
 ## Fonction pour savoir si toute les musiques d'une playlist sont dans une autre
 def can_i_delete_playlist(headers, playlist_master, playlist_2):
     # Récupérer les URIs des chansons de la playlist master
+    name_master = requests.get(BASE_URL + 'playlists/' + playlist_master, headers=headers).json()['name']
+    name_2 = requests.get(BASE_URL + 'playlists/' + playlist_2, headers=headers).json()['name']
     uris_master = set(get_track_for_playlist(headers, playlist_master)['uris'])
     # Récupérer les URIs des chansons de la playlist 2
     uris_playlist_2 = get_track_for_playlist(headers, playlist_2)['uris']
-    # Vérifier si tous les URIs de playlist_2 sont dans la playlist_master
-    if all(uri in uris_master for uri in uris_playlist_2):
-        print("Toutes les chansons de la playlist 2 sont déjà dans la playlist master. Vous pouvez supprimer la playlist sans perdre de musique.")
+    # Trouver les chansons qui ne sont pas dans la playlist master
+    missing_tracks = []
+    
+    for uri in uris_playlist_2:
+        if uri not in uris_master:
+            # Récupérer les détails du morceau manquant
+            track_info = requests.get(f"{BASE_URL}tracks/{uri.split(':')[-1]}", headers=headers).json()
+            missing_tracks.append({'uri': uri, 'name': track_info['name']})
+    
+    # Vérifier s'il y a des chansons manquantes
+    if missing_tracks:
+        print(f'Certaines chansons de la playlist {name_2} ne sont pas dans la playlist {name_master}.')
+        print('Vous risquez de perdre les morceaux suivants si vous supprimez la playlist :')
+        for track in missing_tracks:
+            print(f"- {track['name']} (URI: {track['uri']})")
+        return [track['uri'] for track in missing_tracks]
     else:
-        print("Certaines chansons de la playlist 2 ne sont pas dans la playlist master. Vous risquez de perdre des morceaux si vous supprimez la playlist.")
+        print(f'Toutes les chansons de la playlist {name_2} sont déjà dans la playlist {name_master}. Vous pouvez supprimer la playlist sans perdre de musique.')
+        return []
+
+def are_tracks_in_playlist(headers, playlist_id, track_uris):
+    # Récupérer les URIs des chansons de la playlist cible
+    uris_in_playlist = set(get_track_for_playlist(headers, playlist_id)['uris'])
+    
+    # Vérifier si chaque morceau est présent dans la playlist
+    missing_tracks = [uri for uri in track_uris if uri not in uris_in_playlist]
+    
+    # Retourner les résultats
+    if missing_tracks:
+        print("Certains morceaux ne sont pas dans la playlist :")
+        for uri in missing_tracks:
+            print(f"- URI manquant : {uri}")
+        return False, missing_tracks
+    else:
+        print("Tous les morceaux sont présents dans la playlist.")
+        return True, []
 
 # Recuperer la liste des tracks en plusieurs exemplaire
 def find_duplicate_track(headers, playlist_id):
+    # Récupérer les URIs des chansons de la playlist
     uris_dict_songs = get_track_for_playlist(headers, playlist_id)
     uri_counts = Counter(uris_dict_songs['uris'])
     # Extraire les URI qui apparaissent plus d'une fois
     duplicates_list = [uri for uri, count in uri_counts.items() if count > 1]
-    # Construire la liste de dictionnaires pour les pistes
-    tracks_list = [{"uri": uri} for uri in duplicates_list]
+    
+    # Afficher les noms des titres en double
+    if duplicates_list:
+        print("Les pistes suivantes sont en double dans la playlist :")
+        for uri in duplicates_list:
+            # Récupérer le nom de la chanson
+            track_info = requests.get(f"{BASE_URL}tracks/{uri.split(':')[-1]}", headers=headers).json()
+            print(f"- {track_info['name']} (URI: {uri})")
+    else:
+        print("Aucun doublon trouvé dans la playlist.")
+    
+    # Retourner la liste des URIs en double
     return duplicates_list
 
 def delete_duplicate_track(headers, playlist_id):
@@ -155,10 +259,10 @@ def delete_duplicate_track(headers, playlist_id):
 
 
 
-def json_in_file(PATH, JSON):
+def json_in_file(PATH, JSON_FILE):
     with open(PATH, 'w') as file:
       # Ecrire le JSON dans le fichier
-      json.dump(JSON, file, indent=1)
+      json.dump(JSON_FILE, file, indent=1)
 
 #def main():
 #    get_code_with_scope()
