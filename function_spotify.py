@@ -165,11 +165,33 @@ def create_playlist(headers, playlist_name, user = user_id_arnaud) :
     response = requests.post(BASE_URL  + 'users/'+ user +'/playlists',  data=new_playlist, headers=headers)
     return response.json()
 
-def merge_playlist(headers, output_playlist_id, input_playlist_id, user = user_id_arnaud):
-    uris_dict_to_merge = get_track_for_playlist(headers, input_playlist_id)
-    response = requests.post(BASE_URL + 'playlists/' + output_playlist_id +'/tracks', json=uris_dict_to_merge, headers=headers)
-    print(response.status_code)
-    return response.json()
+def merge_playlist(headers, output_playlist_id, input_playlist_id, user=user_id_arnaud):
+    # Récupérer les URIs des pistes de la playlist source
+    uris_dict_to_merge = get_track_for_playlist(headers, input_playlist_id)["uris"]
+    
+    # Diviser les URIs en lots de 100
+    batch_size = 100
+    for i in range(0, len(uris_dict_to_merge), batch_size):
+        # Créer un sous-ensemble de 100 URIs maximum
+        batch_uris = uris_dict_to_merge[i:i + batch_size]
+        payload = {"uris": batch_uris}
+        
+        # Envoyer le batch à la playlist de destination
+        response = requests.post(
+            f"{BASE_URL}playlists/{output_playlist_id}/tracks",
+            json=payload,
+            headers=headers
+        )
+        
+        # Vérifier la réponse
+        if response.status_code != 201:  # 201 Created est le code attendu
+            print(f"Erreur lors de l'ajout des pistes : {response.status_code}")
+            print(response.json())
+            return response.json()
+
+    print("Les pistes ont été fusionnées avec succès dans la playlist de destination.")
+    return {"status": "success"}
+
 
 ## Fonction pour savoir si toute les musiques d'une playlist sont dans une autre
 def can_i_delete_playlist(headers, playlist_master, playlist_2):
@@ -238,23 +260,57 @@ def find_duplicate_track(headers, playlist_id):
     return duplicates_list
 
 def delete_duplicate_track(headers, playlist_id):
+    # Récupère les URI des morceaux en double
     uris_duplicate_songs = find_duplicate_track(headers, playlist_id)
-    # Recupere le snapshot_id
-    snapshot_id= requests.get(BASE_URL + 'playlists/' + playlist_id, headers=headers).json()['snapshot_id']
-    tracks_list = [{"uri": uri} for uri in uris_duplicate_songs]
-    # Construire le dictionnaire final a supprimer 
-    delete_tracks = {
-        "tracks": tracks_list,
-        "snapshot_id": snapshot_id
-    }
-    # Suppression des Chansons
-    response_delete = requests.delete(BASE_URL + 'playlists/' + playlist_id + '/tracks', json=delete_tracks, headers=headers)
-    print(f'Status Code Delete : {response_delete.status_code}')
-    # Construction de la liste des chanson a remettre pour eviter que elle soit totalement supprimé
-    add_tracks = { 'uris': uris_duplicate_songs}
-    #Rajout des tracks
-    response_add = requests.post(BASE_URL + 'playlists/' + playlist_id + '/tracks', json=add_tracks, headers=headers)
-    print(f'Status Code Add : {response_add.status_code}')
+    if not uris_duplicate_songs:
+        print("Aucun doublon trouvé.")
+        return {"status": "no_duplicates"}
+    # Récupérer le snapshot_id de la playlist
+    response_playlist = requests.get(BASE_URL + f'playlists/{playlist_id}', headers=headers)
+    snapshot_id = response_playlist.json().get('snapshot_id')
+    # Vérifier si le snapshot_id a bien été récupéré
+    if not snapshot_id:
+        print("Impossible de récupérer le snapshot_id.")
+        return {"status": "snapshot_id_error"}
+    # Préparer la suppression des pistes par lots de 100
+    batch_size = 100
+    for i in range(0, len(uris_duplicate_songs), batch_size):
+        batch_uris = uris_duplicate_songs[i:i + batch_size]
+        tracks_list = [{"uri": uri} for uri in batch_uris]
+        delete_tracks = {
+            "tracks": tracks_list,
+            "snapshot_id": snapshot_id
+        }
+        # Envoyer la requête de suppression
+        response_delete = requests.delete(
+            BASE_URL + f'playlists/{playlist_id}/tracks',
+            json=delete_tracks,
+            headers=headers
+        )
+        if response_delete.status_code != 200:
+            print(f"Erreur lors de la suppression des doublons : {response_delete.status_code}")
+            print(response_delete.json())
+            return response_delete.json()
+    print("Doublons supprimés avec succès.")
+
+    # Ré-ajouter les morceaux uniques supprimés, par lots de 100
+    for i in range(0, len(uris_duplicate_songs), batch_size):
+        batch_uris = uris_duplicate_songs[i:i + batch_size]
+        add_tracks = {"uris": batch_uris}
+
+        response_add = requests.post(
+            BASE_URL + f'playlists/{playlist_id}/tracks',
+            json=add_tracks,
+            headers=headers
+        )
+        if response_add.status_code != 201:  # 201 Created est le code attendu
+            print(f"Erreur lors de la réinsertion des morceaux : {response_add.status_code}")
+            print(response_add.json())
+            return response_add.json()
+    
+    print("Morceaux uniques réintégrés avec succès dans la playlist.")
+    return {"status": "success"}
+
 
 
 
